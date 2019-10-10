@@ -74,7 +74,7 @@ class RedshiftUnloader:
         for s3_key, local_file in zip(s3_keys, local_files):
             self.__s3.download(key=s3_key, filename=local_file)
 
-        if combine:
+        if combine_files:
             logger.debug("Merge all objects")
             with open(filename, 'wb') as out:
                 if columns is not None:
@@ -91,7 +91,8 @@ class RedshiftUnloader:
 
 
         logger.debug("Remove temporary directory in local")
-        shutil.rmtree(local_path)
+        if combine_files:
+            shutil.rmtree(local_path)
 
     @staticmethod
     def __generate_session_id() -> str:
