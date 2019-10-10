@@ -41,12 +41,12 @@ class RedshiftUnloader:
 
     def unload(self, query: str, filename: str,
                delimiter: str = ',', add_quotes: bool = True, escape: bool = True,
-               null_string: str = '', with_header: bool = True) -> None:
+               null_string: str = '', with_header: bool = True, gzip: bool = True, combine_files: bool = True, dir: str = '.') -> None:
         session_id = self.__generate_session_id()
         logger.debug("Session id: %s", session_id)
 
         s3_path = self.__generate_path("/tmp/redshift-unloader", session_id, '/')
-        local_path = self.__generate_path(tempfile.gettempdir(), session_id)
+        local_path = self.__generate_path(dir, session_id)
 
         logger.debug("Get columns")
         columns = self.__redshift.get_columns(query, add_quotes) if with_header else None
@@ -55,7 +55,7 @@ class RedshiftUnloader:
         self.__redshift.unload(
             query,
             self.__s3.uri(s3_path),
-            gzip=True,
+            gzip=gzip,
             parallel=True,
             delimiter=delimiter,
             null_string=null_string,
@@ -74,19 +74,21 @@ class RedshiftUnloader:
         for s3_key, local_file in zip(s3_keys, local_files):
             self.__s3.download(key=s3_key, filename=local_file)
 
-        logger.debug("Merge all objects")
-        with open(filename, 'wb') as out:
-            if columns is not None:
-                out.write(gzip.compress((delimiter.join(columns) + os.linesep).encode()))
+        if combine:
+            logger.debug("Merge all objects")
+            with open(filename, 'wb') as out:
+                if columns is not None:
+                    out.write(gzip.compress((delimiter.join(columns) + os.linesep).encode()))
 
-            for local_file in local_files:
-                logger.debug("Merge %s into result file", local_file)
+                for local_file in local_files:
+                    logger.debug("Merge %s into result file", local_file)
 
-                with open(local_file, 'rb') as read:
-                    shutil.copyfileobj(read, out, 2 * MB)
+                    with open(local_file, 'rb') as read:
+                        shutil.copyfileobj(read, out, 2 * MB)
 
         logger.debug("Remove all objects in S3")
         self.__s3.delete(s3_keys)
+
 
         logger.debug("Remove temporary directory in local")
         shutil.rmtree(local_path)
